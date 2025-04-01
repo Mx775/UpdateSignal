@@ -1,0 +1,24 @@
+name: Update Signal
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  OnlineRefresh:
+      runs-on: ubuntu-latest
+
+      steps:
+      - name: Fetching Sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Sending requests to OBS for updated packages
+        run: |
+          find "$HOME/work" -path "*/util/refresh-catalog" -executable -exec {} \;
+
+        env:
+            ACCESS_VARIABLES_TOKEN: ${{ secrets.ACCESS_VARIABLES_TOKEN }}
+            OBS_HOME_PROJECT: ${{ secrets.OBS_HOME_PROJECT }}
+            OBS_TOKEN: ${{ secrets.OBS_TOKEN }}

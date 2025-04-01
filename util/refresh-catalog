@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# ### Env
+set -euo pipefail
+KeyName="VERSIONSBASE64"
+ThisScript="$(realpath -- "$0")"
+RepoPath="$(dirname "$ThisScript" | xargs dirname)"
+export PATH="${RepoPath}/util:$PATH"
+
+cd "$RepoPath"
+ThisRepo="TechieNinjaM/$(dirname "$PWD" | xargs basename)"
+
+OldCatalogFile="$(mktemp)"
+NewCatalogFile="$(mktemp)"
+PackageList="$(awk '{print $1}' upstream-projects.list | tr '\n' ' ')"
+
+# Mitigate potential security issue (scripts sourced by `get-latest-version`)
+AccessVariablesToken="$ACCESS_VARIABLES_TOKEN"
+ObsHome="$OBS_HOME_PROJECT"
+ObsToken="$OBS_TOKEN"
+
+export ACCESS_VARIABLES_TOKEN=""
+export OBS_HOME_PROJECT=""
+export OBS_TOKEN=""
+
+# ### Methods
+# Print
+PrintOK () {
+    echo "[+] $*" >&2
+}
+
+PrintInfo () {
+    echo "[i] $*" >&2
+}
+
+PrintNote () {
+    echo "[*] $*" >&2
+}
+
+PrintWarning () {
+    echo "[-] $*" >&2
+}
+
+PrintError () {
+    echo "[x] $*" >&2
+}
+
+UpdateOnlineStore () {
+    PrintInfo "Updating online store..."
+    
+    curl -s -L \
+        -X PATCH \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $AccessVariablesToken" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        -d "{\"name\":\"${KeyName}\",\"value\":\"$(base64 -w0 "$NewCatalogFile")\"}" \
+        "https://api.github.com/repos/$ThisRepo/actions/variables/${KeyName}"
+}
+
+FetchOnlineStore () {
+    PrintInfo "Reading from online store..."
+
+    curl -s -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $AccessVariablesToken" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/$ThisRepo/actions/variables/${KeyName}" | jq -r .value | base64 -d > "$OldCatalogFile"
+}
+
+# Generate New Catalog
+GenNewCatalog () {
+    local pkg project_url latest_version
+    rm -f "$NewCatalogFile"
+
+    PrintInfo "Checking for version updates..."
+    git config --global init.defaultBranch master &> /dev/null
+
+    for pkg in ${PackageList};do
+        project_url="$(awk "/^${pkg}/{print \$2}" upstream-projects.list)"
+        latest_version="$(get-latest-version "$project_url")"
+        
+        echo "$pkg $latest_version" >> "$NewCatalogFile"
+    done
+}
+
+MakeSingleRequest () {
+    ## Args: <pkg-desc>
+    local project_and_pkg="$1"
+
+    case "$project_and_pkg" in
+        */*) project_and_pkg="Home:$project_and_pkg" ;;
+        *) project_and_pkg="Home/$project_and_pkg";;
+    esac
+    
+    PrintInfo "Sending a request to obs for: $project_and_pkg"
+    project_and_pkg="$ObsHome${project_and_pkg#Home}"
+    local project="${project_and_pkg%/*}"
+    local package="${project_and_pkg#*/}"
+
+	curl -s -H "Authorization: Token $ObsToken" \
+			-H "Accept: application/xml; charset=utf-8" \
+			-X POST "https://api.opensuse.org/trigger" \
+			-d "project=$project&package=$package"
+
+	printf '\n'
+}
+
+MakeRequestsAsNeeded () {
+    local pkg
+
+    got_updated () {
+        local package="$1"
+        local old_version new_version
+
+        old_version="$(awk "/^${package}/{print \$2}" "$OldCatalogFile")"
+        new_version="$(awk "/^${package}/{print \$2}" "$NewCatalogFile")"
+        
+        if [ "$old_version" != "$new_version" ];then
+            PrintNote "Update: $package ($old_version => $new_version)"
+            return 0
+        else
+            PrintOK "Latest: $package ($old_version)"
+            return 1
+        fi
+    }
+
+    for pkg in ${PackageList};do
+        if got_updated "$pkg";then
+            MakeSingleRequest "$pkg"
+        fi
+    done
+}
+
+
+# ### Main Section
+FetchOnlineStore
+GenNewCatalog
+MakeRequestsAsNeeded
+UpdateOnlineStore

@@ -1,0 +1,25 @@
+#!/bin/bash
+# shellcheck disable=1091 disable=2154
+set -euo pipefail
+
+query_aur () {
+    local url="${1}"
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+
+    git clone --quiet --depth=1 "$url" "$tmpdir"
+    
+    source "${tmpdir}/PKGBUILD"
+    echo "${pkgver}"
+}
+
+query_github () {
+    local url="${1/github.com/api.github.com/repos}/releases/latest"
+
+    curl -s "$url" | jq -r .tag_name
+}
+
+case "$1" in
+    https://github.com/?*) query_github "$1" ;;
+    https://aur.archlinux.org/?*.git) query_aur "$1" ;;
+esac
