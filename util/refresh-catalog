@@ -116,7 +116,12 @@ MakeRequestsAsNeeded () {
         new_version="$(awk "/^${package}/{print \$2}" "$NewCatalogFile")"
         
         if [ "$old_version" != "$new_version" ];then
-            PrintNote "Update: $package ($old_version => $new_version)"
+            if [ -z "$old_version" ];then
+                PrintNote "New Entry: $package ($new_version)"
+            else
+                PrintNote "Update: $package ($old_version => $new_version)"
+            fi
+
             return 0
         else
             PrintOK "Latest: $package ($old_version)"
