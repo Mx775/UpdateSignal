@@ -12,7 +12,7 @@ ThisRepo="TechieNinjaM/$(dirname "$PWD" | xargs basename)"
 
 OldCatalogFile="$(mktemp)"
 NewCatalogFile="$(mktemp)"
-PackageList="$(awk '{print $1}' upstream-projects.list | tr '\n' ' ')"
+PackageList="$(awk '/^[^#]*$/{print $1}' upstream-projects.list | tr '\n' ' ')"
 
 # Mitigate potential security issue (scripts sourced by `get-latest-version`)
 AccessVariablesToken="$ACCESS_VARIABLES_TOKEN"
@@ -76,7 +76,7 @@ GenNewCatalog () {
     git config --global init.defaultBranch master &> /dev/null
 
     for pkg in ${PackageList};do
-        project_url="$(awk "/^${pkg}/{print \$2}" upstream-projects.list)"
+        project_url="$(awk "/^${pkg//\//\\\/}/{print \$2}" upstream-projects.list)"
         latest_version="$(get-latest-version "$project_url")"
         
         echo "$pkg $latest_version" >> "$NewCatalogFile"
@@ -112,8 +112,8 @@ MakeRequestsAsNeeded () {
         local package="$1"
         local old_version new_version
 
-        old_version="$(awk "/^${package}/{print \$2}" "$OldCatalogFile")"
-        new_version="$(awk "/^${package}/{print \$2}" "$NewCatalogFile")"
+        old_version="$(awk "/^${package//\//\\\/}/{print \$2}" "$OldCatalogFile")"
+        new_version="$(awk "/^${package//\//\\\/}/{print \$2}" "$NewCatalogFile")"
         
         if [ "$old_version" != "$new_version" ];then
             if [ -z "$old_version" ];then
