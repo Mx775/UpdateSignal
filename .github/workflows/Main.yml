@@ -2,7 +2,7 @@ name: Update Signal
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 5,17 * * *'
 
 jobs:
   OnlineRefresh:
