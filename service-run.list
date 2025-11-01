@@ -1,5 +1,4 @@
 android-apktool                 https://github.com/iBotPeaches/Apktool
-android-build-tools             https://aur.archlinux.org/android-sdk-build-tools.git
 Factory/apk-editor-studio       https://github.com/kefir500/apk-editor-studio
 Plasma/better-blur              https://github.com/taj-ny/kwin-effects-forceblur
 Plasma/darkly-qt                https://github.com/Bali10050/Darkly
@@ -7,7 +6,6 @@ Plasma/darkly-qt                https://github.com/Bali10050/Darkly
 hblock                          https://github.com/hectorm/hblock
 Factory/hydroxide               https://github.com/emersion/hydroxide
 obsidian                        https://github.com/obsidianmd/obsidian-releases
-rar                             https://aur.archlinux.org/rar.git
 Factory/shc                     https://github.com/neurobin/shc
 telegram                        https://github.com/telegramdesktop/tdesktop
 ventoy                          https://github.com/ventoy/Ventoy

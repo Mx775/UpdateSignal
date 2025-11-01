@@ -13,10 +13,14 @@ query_aur () {
     echo "${pkgver}"
 }
 
-query_github () {
+query_github_release () {
     local url="${1/github.com/api.github.com/repos}/releases/latest"
-
     curl -s "$url" | jq -r .tag_name
+}
+
+query_github () {
+    local url="${1/github.com/api.github.com/repos}/tags"
+    curl -s "$url" | jq -r '.[0].name'
 }
 
 case "$1" in

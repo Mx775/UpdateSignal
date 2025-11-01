@@ -8,20 +8,28 @@ RepoPath="$(dirname "$ThisScript" | xargs dirname)"
 export PATH="${RepoPath}/util:$PATH"
 
 cd "$RepoPath"
-ThisRepo="TechieNinjaM/$(dirname "$PWD" | xargs basename)"
+ThisRepo="${THIS_REPO}"
 
 OldCatalogFile="$(mktemp)"
 NewCatalogFile="$(mktemp)"
-PackageList="$(awk '/^[^#]*$/{print $1}' upstream-projects.list | tr '\n' ' ')"
+
+# PackageList="$(awk '/^[^#]*$/{print $1}' service-run.list manual.list | tr '\n' ' ')"
+mapfile -d $'\n' -t ServiceRunPackages < <(awk '/^[^#]*$/{print $1}' service-run.list)
+mapfile -d $'\n' -t ManualPackages < <(awk '/^[^#]*$/{print $1}' manual.list)
+PackageList=("${ServiceRunPackages[@]}" "${ManualPackages[@]}")
+
 
 # Mitigate potential security issue (scripts sourced by `get-latest-version`)
 AccessVariablesToken="$ACCESS_VARIABLES_TOKEN"
-ObsHome="$OBS_HOME_PROJECT"
-ObsToken="$OBS_TOKEN"
+obsHome="$OBS_HOME_PROJECT"
+obsToken="$OBS_TOKEN"
+obsCredentials="$OBS_CREDENTIALS"
 
 export ACCESS_VARIABLES_TOKEN=""
 export OBS_HOME_PROJECT=""
 export OBS_TOKEN=""
+export OBS_CREDENTIALS=""
+export THIS_REPO=""
 
 # ### Methods
 # Print
@@ -75,29 +83,20 @@ GenNewCatalog () {
     PrintInfo "Checking for version updates..."
     git config --global init.defaultBranch master &> /dev/null
 
-    for pkg in ${PackageList};do
-        project_url="$(awk "/^${pkg//\//\\\/}/{print \$2}" upstream-projects.list)"
+    for pkg in "${PackageList[@]}";do
+        project_url="$(awk "/^${pkg//\//\\\/}/{print \$2}" ./*.list | head -n1)"
         latest_version="$(get-latest-version "$project_url")"
         
         echo "$pkg $latest_version" >> "$NewCatalogFile"
     done
 }
 
-MakeSingleRequest () {
-    ## Args: <pkg-desc>
-    local project_and_pkg="$1"
+ServiceRunRequest () {
+    local project="$1"
+    local package="$2"
 
-    case "$project_and_pkg" in
-        */*) project_and_pkg="Home:$project_and_pkg" ;;
-        *) project_and_pkg="Home/$project_and_pkg";;
-    esac
-    
-    PrintInfo "Sending a request to obs for: $project_and_pkg"
-    project_and_pkg="$ObsHome${project_and_pkg#Home}"
-    local project="${project_and_pkg%/*}"
-    local package="${project_and_pkg#*/}"
-
-	curl -s -H "Authorization: Token $ObsToken" \
+    PrintInfo "Sending a ServiceRun request to OBS for: $package"
+	curl -sH "Authorization: Token $obsToken" \
 			-H "Accept: application/xml; charset=utf-8" \
 			-X POST "https://api.opensuse.org/trigger" \
 			-d "project=$project&package=$package"
@@ -105,33 +104,106 @@ MakeSingleRequest () {
 	printf '\n'
 }
 
+ManualUpdate () {
+    local project_name="$1"
+    local package_name="$2"
+    local new_version="$3"
+    local comment="version pump to ${new_version}"
+    local file_name="${package_name}.spec"
+    
+    local temp_spec
+    temp_spec="$(mktemp)"
+
+    PrintInfo "Fetching ${file_name}..."
+    curl --silent --output "${temp_spec}" \
+            --user "${obsCredentials}" \
+            -H "Accept: application/xml; charset=utf-8" \
+            -X GET "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}"
+
+    # Set `Version:` in specfile to new version
+    PrintInfo "Setting version to ${new_version}..."
+    sed -i -r "/^Version: */s| [^ ]*$| ${new_version}|" "${temp_spec}"
+
+    PrintInfo "Uploading ${file_name}..."
+    curl --silent --upload-file "${temp_spec}" \
+            --user "${obsCredentials}" \
+            -H "Accept: application/xml; charset=utf-8" \
+            "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
+
+    
+    rm -f "${temp_spec}"
+}
+
+set_package () {
+    local project_and_pkg="$1"
+
+    case "$project_and_pkg" in
+        */*) project_and_pkg="Home:$project_and_pkg" ;;
+        *) project_and_pkg="Home/$project_and_pkg";;
+    esac
+    
+    PrintInfo "Sending a ServiceRun request to OBS for: $project_and_pkg"
+    project_and_pkg="$obsHome${project_and_pkg#Home}"
+
+    # Global scpoe
+    project="${project_and_pkg%/*}"
+    package="${project_and_pkg#*/}"
+}
+
+get_package_version () {
+    local old_or_new="$1"
+    local package_name="$2"
+    local catalog_file
+
+    if [ "${old_or_new}" = "--old" ];then
+        catalog_file="$OldCatalogFile"
+
+    elif [ "${old_or_new}" = "--new" ];then
+        catalog_file="$NewCatalogFile"
+    
+    else
+        exit 50
+    fi
+
+    awk "/^${package_name//\//\\\/}/{print \$2}" "$catalog_file"
+}
+
+got_updated () {
+    local package="$1"
+    local old_version new_version
+
+    old_version="$(get_package_version --old "${package}")"
+    new_version="$(get_package_version --new "${package}")"
+    
+    if [ "$old_version" != "$new_version" ];then
+        if [ -z "$old_version" ];then
+            PrintNote "New Entry: $package ($new_version)"
+        else
+            PrintNote "Update: $package ($old_version => $new_version)"
+        fi
+
+        return 0
+    else
+        PrintOK "Latest: $package ($old_version)"
+        return 1
+    fi
+}
+
 MakeRequestsAsNeeded () {
     local pkg
+    local project package
 
-    got_updated () {
-        local package="$1"
-        local old_version new_version
-
-        old_version="$(awk "/^${package//\//\\\/}/{print \$2}" "$OldCatalogFile")"
-        new_version="$(awk "/^${package//\//\\\/}/{print \$2}" "$NewCatalogFile")"
-        
-        if [ "$old_version" != "$new_version" ];then
-            if [ -z "$old_version" ];then
-                PrintNote "New Entry: $package ($new_version)"
-            else
-                PrintNote "Update: $package ($old_version => $new_version)"
-            fi
-
-            return 0
-        else
-            PrintOK "Latest: $package ($old_version)"
-            return 1
-        fi
-    }
-
-    for pkg in ${PackageList};do
+    for pkg in "${ServiceRunPackages[@]}";do
         if got_updated "$pkg";then
-            MakeSingleRequest "$pkg"
+            set_package "$pkg"
+            ServiceRunRequest "$project" "$package"
+        fi
+    done
+
+    for pkg in "${ManualPackages[@]}";do
+        if got_updated "$pkg";then
+            set_package "$pkg"
+            ManualUpdate "$project" "$package" "$(get_package_version --new "${package}" | sed 's/^[rv]//')"
         fi
     done
 }
