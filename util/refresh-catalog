@@ -91,7 +91,7 @@ GenNewCatalog () {
     done
 }
 
-ServiceRunRequest () {
+ServiceRunRequestToken () {
     local project="$1"
     local package="$2"
 
@@ -102,6 +102,22 @@ ServiceRunRequest () {
 			-d "project=$project&package=$package"
 
 	printf '\n'
+}
+
+ServiceRunRequest () {
+    local project_name="$1"
+    local package_name="$2"
+    local new_version="$3"
+    local comment="RunService: version pump to ${new_version}"
+
+    PrintInfo "Sending a ServiceRun request to OBS for: $package ($new_version)"
+    curl -sH "Accept: application/xml; charset=utf-8" \
+            --user "${obsCredentials}" \
+            -X POST "https://api.opensuse.org/source/${project_name}/${package_name}" \
+            -F "cmd=runservice" \
+            -F "comment=$comment"
+    
+    printf '\n'
 }
 
 ManualUpdate () {
@@ -170,8 +186,8 @@ get_package_version () {
 
 got_updated () {
     local package="$1"
-    local old_version new_version
 
+    # set in global scope
     old_version="$(get_package_version --old "${package}")"
     new_version="$(get_package_version --new "${package}")"
     
@@ -192,18 +208,19 @@ got_updated () {
 MakeRequestsAsNeeded () {
     local pkg
     local project package
+    local old_version new_version
 
     for pkg in "${ServiceRunPackages[@]}";do
         if got_updated "$pkg";then
             set_package "$pkg"
-            ServiceRunRequest "$project" "$package"
+            ServiceRunRequest "$project" "$package" "${new_version#[rv]}"
         fi
     done
 
     for pkg in "${ManualPackages[@]}";do
         if got_updated "$pkg";then
             set_package "$pkg"
-            ManualUpdate "$project" "$package" "$(get_package_version --new "${package}" | sed 's/^[rv]//')"
+            ManualUpdate "$project" "$package" "${new_version#[rv]}"
         fi
     done
 }
