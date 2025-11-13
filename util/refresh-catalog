@@ -138,7 +138,9 @@ ManualUpdate () {
 
     # Set `Version:` in specfile to new version
     PrintInfo "Setting version to ${new_version}..."
-    sed -i -r "/^Version: */s| [^ ]*$| ${new_version}|" "${temp_spec}"
+    sed -i -r "/^%global pkg_version/s| [^ ]*$| ${new_version}|" "${temp_spec}"
+    sed -i -r "/^%global dotless_pkg_version/s| [^ ]*$| ${new_version//./}|" "${temp_spec}"
+    # sed -i -r "/^Version: */s| [^ ]*$| ${new_version}|" "${temp_spec}"
 
     PrintInfo "Uploading ${file_name}..."
     curl --silent --upload-file "${temp_spec}" \
