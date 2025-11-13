@@ -160,7 +160,6 @@ set_package () {
         *) project_and_pkg="Home/$project_and_pkg";;
     esac
     
-    PrintInfo "Sending a ServiceRun request to OBS for: $project_and_pkg"
     project_and_pkg="$obsHome${project_and_pkg#Home}"
 
     # Global scpoe
