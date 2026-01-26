@@ -125,31 +125,29 @@ ManualUpdate () {
     local package_name="$2"
     local new_version="$3"
     local comment="version pump to ${new_version}"
-    local file_name="${package_name}.spec"
+    local file_name="_set_version"
     
-    local temp_spec
-    temp_spec="$(mktemp)"
+    local temp_file
+    temp_file="$(mktemp)"
 
     PrintInfo "Fetching ${file_name}..."
-    curl --silent --output "${temp_spec}" \
+    curl --silent --output "${temp_file}" \
             --user "${obsCredentials}" \
             -H "Accept: application/xml; charset=utf-8" \
             -X GET "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}"
 
     # Set `Version:` in specfile to new version
     PrintInfo "Setting version to ${new_version}..."
-    sed -i -r "/^%global pkg_version/s| [^ ]*$| ${new_version}|" "${temp_spec}"
-    sed -i -r "/^%global dotless_pkg_version/s| [^ ]*$| ${new_version//./}|" "${temp_spec}"
-    # sed -i -r "/^Version: */s| [^ ]*$| ${new_version}|" "${temp_spec}"
+    sed -Ei "/^[Vv]ersion:/s|:.*|: ${new_version}|" "${temp_file}"
 
     PrintInfo "Uploading ${file_name}..."
-    curl --silent --upload-file "${temp_spec}" \
+    curl --silent --upload-file "${temp_file}" \
             --user "${obsCredentials}" \
             -H "Accept: application/xml; charset=utf-8" \
             "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
 
     
-    rm -f "${temp_spec}"
+    rm -f "${temp_file}"
 }
 
 set_package () {
