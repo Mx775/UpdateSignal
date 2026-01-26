@@ -4,20 +4,18 @@
 set -euo pipefail
 KeyName="VERSIONSBASE64"
 ThisScript="$(realpath -- "$0")"
-RepoPath="$(dirname "$ThisScript" | xargs dirname)"
+RepoPath="$(dirname "${ThisScript%/*}")"
 export PATH="${RepoPath}/util:$PATH"
+
+# shellcheck source=../pkg.lists.sh
+source "${RepoPath}/pkg.lists.sh"
+PkgsAll=("${PkgsServiceUpdated[@]}" "${PkgsManuallyUpdated[@]}")
 
 cd "$RepoPath"
 ThisRepo="${THIS_REPO}"
 
 OldCatalogFile="$(mktemp)"
 NewCatalogFile="$(mktemp)"
-
-# PackageList="$(awk '/^[^#]*$/{print $1}' service-run.list manual.list | tr '\n' ' ')"
-mapfile -d $'\n' -t ServiceRunPackages < <(awk '/^[^#]*$/{print $1}' service-run.list)
-mapfile -d $'\n' -t ManualPackages < <(awk '/^[^#]*$/{print $1}' manual.list)
-PackageList=("${ServiceRunPackages[@]}" "${ManualPackages[@]}")
-
 
 # Mitigate potential security issue (scripts sourced by `get-latest-version`)
 AccessVariablesToken="$ACCESS_VARIABLES_TOKEN"
@@ -77,15 +75,14 @@ FetchOnlineStore () {
 
 # Generate New Catalog
 GenNewCatalog () {
-    local pkg project_url latest_version
+    local pkg latest_version
     rm -f "$NewCatalogFile"
 
     PrintInfo "Checking for version updates..."
     git config --global init.defaultBranch master &> /dev/null
 
-    for pkg in "${PackageList[@]}";do
-        project_url="$(awk "/^${pkg//\//\\\/}/{print \$2}" ./*.list | head -n1)"
-        latest_version="$(get-latest-version "$project_url")"
+    for pkg in "${PkgsAll[@]}";do
+        latest_version="$(get-latest-version "$pkg")"
         
         echo "$pkg $latest_version" >> "$NewCatalogFile"
     done
@@ -209,14 +206,14 @@ MakeRequestsAsNeeded () {
     local project package
     local old_version new_version
 
-    for pkg in "${ServiceRunPackages[@]}";do
+    for pkg in "${PkgsServiceUpdated[@]}";do
         if got_updated "$pkg";then
             set_package "$pkg"
             ServiceRunRequest "$project" "$package" "${new_version#[rv]}"
         fi
     done
 
-    for pkg in "${ManualPackages[@]}";do
+    for pkg in "${PkgsManuallyUpdated[@]}";do
         if got_updated "$pkg";then
             set_package "$pkg"
             ManualUpdate "$project" "$package" "${new_version#[rv]}"

@@ -1,15 +1,19 @@
 #!/bin/bash
-# shellcheck disable=1091 disable=2154
 set -euo pipefail
+
+# shellcheck source=../pkg.lists.sh
+source "${BASH_SOURCE[0]%/*}/../pkg.lists.sh"
 
 query_aur () {
     local url="${1}"
+    local pkgver="null"
     local tmpdir
     tmpdir="$(mktemp -d)"
 
     git clone --quiet --depth=1 "$url" "$tmpdir"
     
-    source "${tmpdir}/PKGBUILD"
+    # shellcheck disable=1091
+    source "${tmpdir}/PKGBUILD" || :
     echo "${pkgver}"
 }
 
@@ -18,12 +22,40 @@ query_github_release () {
     curl -s "$url" | jq -r .tag_name
 }
 
-query_github () {
+query_github_tag () {
     local url="${1/github.com/api.github.com/repos}/tags"
     curl -s "$url" | jq -r '.[0].name'
 }
 
-case "$1" in
-    https://github.com/?*) query_github "$1" ;;
-    https://aur.archlinux.org/?*.git) query_aur "$1" ;;
-esac
+# Actions
+
+QURL () {
+    local url="$1"
+
+    case "$url" in
+        https://github.com/?*) query_github_tag "$url" ;;
+        https://aur.archlinux.org/?*.git) query_aur "$url" ;;
+    esac
+}
+
+QReleaseMonitor_Org () {
+    local project="$1"
+    curl -s "https://release-monitoring.org/api/v2/projects/?name=${project}" | jq -r '.items[0].stable_versions[0]'
+}
+
+
+# ### Main Section
+for pkg in "$@"; do
+    pkg="${pkg##*/}"
+    
+    upstream_url="${PkgUpstreamURLs[$pkg]:-null}"
+    rel_mon_project="${PkgProjectNameOverrides[$pkg]:-$pkg}"
+
+    if [ "${upstream_url}" != "null" ]; then
+        QURL "$upstream_url"
+
+    else
+        QReleaseMonitor_Org "$rel_mon_project"
+
+    fi
+done
