@@ -29,7 +29,7 @@ PkgsServiceUpdated=(
     Factory/pdfcpu
     Factory/shc
 
-    Plasma/better-blur
+    Plasma/better-blur-dx
     Plasma/darkly-qt
 )
 
@@ -63,7 +63,7 @@ PkgUpstreamURLs=(
     [nim]="https://github.com/nim-lang/Nim" # **
     [shc]="https://github.com/neurobin/shc" # **
 
-    [better-blur]="https://github.com/taj-ny/kwin-effects-forceblur"
+    [better-blur-dx]="https://github.com/xarblu/kwin-effects-better-blur-dx"
     [darkly-qt]="https://github.com/Bali10050/Darkly" # **
     
     # This fails for some reaseon
