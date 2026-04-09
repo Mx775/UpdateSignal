@@ -23,11 +23,7 @@ obsHome="$OBS_HOME_PROJECT"
 obsToken="$OBS_TOKEN"
 obsCredentials="$OBS_CREDENTIALS"
 
-export ACCESS_VARIABLES_TOKEN=""
-export OBS_HOME_PROJECT=""
-export OBS_TOKEN=""
-export OBS_CREDENTIALS=""
-export THIS_REPO=""
+unset ACCESS_VARIABLES_TOKEN OBS_HOME_PROJECT OBS_TOKEN OBS_CREDENTIALS THIS_REPO
 
 # ### Methods
 # Print
@@ -54,23 +50,40 @@ PrintError () {
 UpdateOnlineStore () {
     PrintInfo "Updating online store..."
     
-    curl -s -L \
+    api_response="$(
+        curl -s -L \
         -X PATCH \
         -H "Accept: application/vnd.github+json" \
         -H "Authorization: Bearer $AccessVariablesToken" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        -d "{\"name\":\"${KeyName}\",\"value\":\"$(base64 -w0 "$NewCatalogFile")\"}" \
+        -d "$( printf '{"name":"%s","value":"%s"}' "${KeyName}" "$(base64 -w0 "$NewCatalogFile")" )" \
         "https://api.github.com/repos/$ThisRepo/actions/variables/${KeyName}"
+    )"
+    
+    if jq -re '.status' <<< "$api_response" > /dev/null;then
+        PrintError "Operation failed: $(jq -r '.message' <<< "$api_response")"
+        exit 2
+    fi
 }
 
 FetchOnlineStore () {
     PrintInfo "Reading from online store..."
+    local api_response
 
-    curl -s -L \
-        -H "Accept: application/vnd.github+json" \
-        -H "Authorization: Bearer $AccessVariablesToken" \
-        -H "X-GitHub-Api-Version: 2022-11-28" \
-        "https://api.github.com/repos/$ThisRepo/actions/variables/${KeyName}" | jq -r .value | base64 -d > "$OldCatalogFile"
+    api_response="$(
+        curl -sL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $AccessVariablesToken" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$ThisRepo/actions/variables/${KeyName}"
+    )"
+    
+    if jq -re '.status' <<< "$api_response" > /dev/null;then
+        PrintError "Operation failed: $(jq -r '.message' <<< "$api_response")"
+        exit 2
+    fi
+    
+    jq -re '.value' <<< "$api_response" | base64 -d > "$OldCatalogFile"
 }
 
 # Generate New Catalog

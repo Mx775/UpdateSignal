@@ -17,7 +17,7 @@ jobs:
 
       - name: Sending requests to OBS for updated packages
         run: |
-          find "$HOME/work" -path "*/util/refresh-catalog" -executable -exec {} \;
+          util/refresh-catalog
 
         env:
             ACCESS_VARIABLES_TOKEN: ${{ secrets.ACCESS_VARIABLES_TOKEN }}
