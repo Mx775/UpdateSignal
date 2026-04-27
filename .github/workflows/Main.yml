@@ -15,6 +15,11 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Installing dependancies
+        run: |
+          git config --global init.defaultBranch master &> /dev/null
+          sudo apt install -y xmlstarlet
+          
       - name: Sending requests to OBS for updated packages
         run: |
           util/refresh-catalog

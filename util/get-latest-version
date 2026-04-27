@@ -43,19 +43,39 @@ QReleaseMonitor_Org () {
     curl -s "https://release-monitoring.org/api/v2/projects/?name=${project}" | jq -r '.items[0].stable_versions[0]'
 }
 
+ScriptlessQuery () {
+    local pkg upstream_url rel_mon_project
+
+    for pkg in "$@"; do
+        pkg="${pkg##*/}"
+        
+        upstream_url="${PkgUpstreamURLs[$pkg]:-null}"
+        rel_mon_project="${PkgProjectNameOverrides[$pkg]:-$pkg}"
+
+        if [ "${upstream_url}" != "null" ]; then
+            QURL "$upstream_url"
+
+        else
+            QReleaseMonitor_Org "$rel_mon_project"
+
+        fi
+    done
+}
+
+# ### Main Function
+VersionQuery () {
+    local pkg
+
+    for pkg in "$@"; do
+        pkg="${pkg##*/}"
+        [ -x "${0%/*}/VersionQuery/$pkg" ] && exec "${0%/*}/VersionQuery/$pkg"
+        
+        ScriptlessQuery "$pkg"
+    done
+}
+
 
 # ### Main Section
-for pkg in "$@"; do
-    pkg="${pkg##*/}"
-    
-    upstream_url="${PkgUpstreamURLs[$pkg]:-null}"
-    rel_mon_project="${PkgProjectNameOverrides[$pkg]:-$pkg}"
-
-    if [ "${upstream_url}" != "null" ]; then
-        QURL "$upstream_url"
-
-    else
-        QReleaseMonitor_Org "$rel_mon_project"
-
-    fi
-done
+if [ "$0" = "${BASH_SOURCE[0]}" ];then
+    VersionQuery "$@"
+fi

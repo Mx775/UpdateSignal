@@ -5,7 +5,7 @@ set -euo pipefail
 KeyName="VERSIONSBASE64"
 ThisScript="$(realpath -- "$0")"
 RepoPath="$(dirname "${ThisScript%/*}")"
-export PATH="${RepoPath}/util:$PATH"
+# export PATH="${RepoPath}/util:$PATH"
 
 # shellcheck source=../pkg.lists.sh
 source "${RepoPath}/pkg.lists.sh"
@@ -92,10 +92,9 @@ GenNewCatalog () {
     rm -f "$NewCatalogFile"
 
     PrintInfo "Checking for version updates..."
-    git config --global init.defaultBranch master &> /dev/null
 
     for pkg in "${PkgsAll[@]}";do
-        latest_version="$(get-latest-version "$pkg")"
+        latest_version="$( "${0%/*}/get-latest-version" "$pkg" )"
         
         echo "$pkg $latest_version" >> "$NewCatalogFile"
     done

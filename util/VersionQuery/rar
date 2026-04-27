@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+# shellcheck source=../get-latest-version
+source "${BASH_SOURCE[0]%/*}"/../get-latest-version
+
+ScriptlessQuery "${BASH_SOURCE[0]##*/}" | sed 's#\.##'

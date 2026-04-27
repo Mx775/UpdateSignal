@@ -1,0 +1,47 @@
+#!/bin/bash
+set -e
+
+RepositoryXML="$(mktemp)"
+curl -s https://dl.google.com/android/repository/repository2-2.xml -o "${RepositoryXML}"
+
+
+mapfile -tu3 FullVersions 3< <(
+	xmlstarlet select --template \
+	--match "/sdk:sdk-repository/remotePackage[starts-with(@path, 'build-tools;')]/revision" \
+	-v "major" -o "." \
+	-v "minor" -o "." \
+	-v "micro" \
+	--if "preview" -o "-rc" -v "preview" \
+	--break -n \
+	"${RepositoryXML}"
+)
+
+
+mapfile -tu3 SimpleVersions 3< <(
+	xmlstarlet select --text --template \
+	--value-of "/sdk:sdk-repository/remotePackage[starts-with(@path, 'build-tools;')]/archives/archive[host-os='linux']/complete/url" \
+	-nl \
+	"${RepositoryXML}" | \
+	perl -nle 'print $1 if /^build-tools_r([0-9\.]+(|-rc\d))[_-]linux\.zip$/' | \
+	sort --version-sort --reverse
+)
+
+
+get_version () {
+	local v
+	for v in "${FullVersions[@]}"; do
+
+		xmlstarlet select --template \
+		--match "/sdk:sdk-repository/remotePackage[@path='build-tools;$v']/archives/archive[host-os='linux']/complete" \
+		--if "url" -o "FOUND" -n \
+		"${RepositoryXML}" | \
+		grep -xq "FOUND" && echo "$v" && return 0
+
+	done
+}
+
+get_version_simple () {
+	echo "${SimpleVersions[0]}"
+}
+
+get_version_simple
