@@ -17,8 +17,10 @@ CleanUp () {
 trap CleanUp EXIT
 
 # Mitigate potential security issue (scripts sourced by `get-latest-version`)
+
 obsToken="$OBS_TOKEN"
 obsCredentials="$OBS_CREDENTIALS"
+obsAPI="${OBS_API:-api.opensuse.org}"
 
 mapfile -tu3 ProjectList 3<<< "$OBS_PROJECT_LIST"
 exec 3<&-
@@ -48,15 +50,35 @@ PrintError () {
 }
 # ==================================================
 
+# Calls `curl` with OBS Credentials
+curl_cr () {
+    local -x local_obs_credentials="$obsCredentials"
+    local -x test_var="ABC"
+
+    curl -s \
+        -K <(printenv local_obs_credentials | sed 's/^.*$/user = "&"/') \
+        -H "Accept: application/xml; charset=utf-8" \
+        "$@"
+}
+
+# Calls `curl` with OBS Token
+curl_t () {
+    local -x local_obs_token="$obsToken"
+
+    curl -s \
+        -K <(printenv local_obs_token | sed 's/^.*$/header = "Authorization: Token &"/') \
+        -H "Accept: application/xml; charset=utf-8" \
+        "$@"
+}
+
 ServiceRunRequestToken () {
     local project="$1"
     local package="$2"
 
     PrintInfo "Sending a ServiceRun request to OBS for: $package"
-	curl -sH "Authorization: Token $obsToken" \
-			-H "Accept: application/xml; charset=utf-8" \
-			-X POST "https://api.opensuse.org/trigger" \
-			-d "project=$project&package=$package"
+	curl_t \
+		-X POST "https://$obsAPI/trigger" \
+		-d "project=$project&package=$package" \
 
 	printf '\n'
 }
@@ -68,11 +90,10 @@ ServiceRunRequest () {
     local comment="RunService: version pump to ${new_version}"
 
     PrintInfo "Sending a ServiceRun request to OBS for: $package ($new_version)"
-    curl -sH "Accept: application/xml; charset=utf-8" \
-            --user "${obsCredentials}" \
-            -X POST "https://api.opensuse.org/source/${project_name}/${package_name}" \
-            -F "cmd=runservice" \
-            -F "comment=$comment"
+    curl_cr \
+        -X POST "https://$obsAPI/source/${project_name}/${package_name}" \
+        -F "cmd=runservice" \
+        -F "comment=$comment"
 
     printf '\n'
 }
@@ -82,7 +103,8 @@ ListProjectPackages () {
 
     # Just incase the project list ends with an empty line
     [ -z "$*" ] && return 0
-    curl -su "${obsCredentials}" "https://api.opensuse.org/source/$project_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
+
+    curl_cr "https://$obsAPI/source/$project_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
 }
 
 ListPackageFiles () {
@@ -91,7 +113,7 @@ ListPackageFiles () {
 
     # Just incase the project list ends with an empty line
     [ -z "$*" ] && return 0
-    curl -su "${obsCredentials}" "https://api.opensuse.org/source/$project_name/$package_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
+    curl_cr "https://$obsAPI/source/$project_name/$package_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
 }
 
 GetPkgInfo () {
@@ -123,10 +145,9 @@ HandlePackage () {
     fi
 
     pkg_info_file="$(mktemp -p "$WorkDir")"
-    curl --silent --output "${pkg_info_file}" \
-        --user "${obsCredentials}" \
-        -H "Accept: application/xml; charset=utf-8" \
-        -X GET "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}"
+    curl_cr \
+        --output "${pkg_info_file}" \
+        "https://$obsAPI/source/${project_name}/${package_name}/${file_name}"
 
 
     upstream="$(GetPkgInfo Upstream "${pkg_info_file}")"
@@ -134,7 +155,7 @@ HandlePackage () {
     new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
 
     if [ "${new_version:?}" = "${old_version:?}" ]; then
-        PrintOK "Latest: $package_name ($new_version)"
+        PrintOK "UptoDate: $package_name ($new_version)"
         return 0
     fi
 
@@ -145,13 +166,39 @@ HandlePackage () {
     comment="${ThisRepo##*/}: version pump to ${new_version}"
 
     PrintInfo "Uploading ${file_name}..."
-    curl -su "${obsCredentials}" \
-        -H "Accept: application/xml; charset=utf-8" \
-        -X PUT -d @"${pkg_info_file}" \
-        "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
+    curl_cr \
+        -T "${pkg_info_file}" \ # Implies PUT
+        "https://$obsAPI/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
+}
+
+ValidateCredentials () {
+    local obs_user="${obsCredentials%%:*}"
+    local response token_count token_id token_description
+
+    response="$(curl_cr "https://$obsAPI/person/$obs_user/token")"
+    token_count="$(xmlstarlet select -t -v "/directory/@count" -n <<< "$response" 2> /dev/null)"
+
+    if [ -z "$token_count" ]; then
+        PrintError "Invalid Response"
+        echo "$response" >&2
+        exit 2
+    fi
+
+
+    PrintOK "Credentials validated"
+    [ "${token_count}" -eq 0 ] && PrintWarning "OBS Token was not validated (user has no OBS tokens)" && return 0
+
+    # FIXME: Exposure in arguments
+    token_id="$(xmlstarlet select -t -v "/directory/entry[@string = '$obsToken']/@id" -n <<< "$response")"
+    [ -z "$token_id" ] && PrintWarning "OBS Token was not validated" && return 0
+
+    token_description="$(xmlstarlet select -t -v "/directory/entry[@id = '$token_id']/@description" -n <<< "$response")"
+    PrintOK "OBS Token validated: $token_description"
 }
 
 # ========== Main Section ============
+ValidateCredentials
+
 for project in "${ProjectList[@]}"; do
 
     while read -ru3 package;do
