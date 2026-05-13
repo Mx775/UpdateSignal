@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+export IGNORE_QSCRIPTS=true
 
 RepositoryXML="$(mktemp)"
 curl -s https://dl.google.com/android/repository/repository2-2.xml -o "${RepositoryXML}"

@@ -5,21 +5,19 @@ My personal workflow to automate the process of updating the software I have hos
   
 ## Prerequisites
 
-1. Update `pkg.lists.sh` per your needs
-2. The following repository secrets must be created before the CI can invoke OBS API endpoints:
-    - `ACCESS_VARIABLES_TOKEN`: A github fine-grained access token with read/write access to actions variables of this repo
+1. The following repository secrets must be created before the CI can invoke OBS API endpoints:
     - `OBS_CREDENTIALS`: OBS user credentials to invoke some OBS API endpoints (`$OBS_Username:$OBS_Password`)
-    - `OBS_HOME_PROJECT`: OBS user home project (`home:$OBS_Username`)
-    - `OBS_TOKEN`: OBS token with privileges to run package services in your home project, this is a legacy requirement and is still used by `util/refresh-catalog:ServiceRunRequestToken` which is now unused, but still perfectly functional and may be re-used in future releases, you can set this to a random value for the time being.
+    - `OBS_PROJECT_LIST`: The OBS projects that you want this workflow to manage (one per line)
+    - `OBS_TOKEN`: OBS token with privileges to run package services in your home project, this is a legacy requirement and is still used by `util/pkg-trigger:ServiceRunRequestToken` which is now unused, but still perfectly functional and may be re-used in a future releases, you can set this to a random value for the time being.
 
-  
+2. A special `_pkg_info` file in each package in your managed projects (those in `$OBS_PROJECT_LIST`)
+
+
 ## References: API Documentations Used
 
 1. Github
-	- [Repository variables](https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#list-repository-variables)
 	- [Get the latest release](https://docs.github.com/en/enterprise-server@3.20/rest/releases/releases?apiVersion=2022-11-28#get-the-latest-release)
 	- [Tags](https://docs.github.com/en/rest/git/tags?apiVersion=2022-11-28)
 
 2. [Open Build Service](https://api.opensuse.org/apidocs/index#)
 3. [release-monitoring.org](https://release-monitoring.org/static/docs/api.html)
-

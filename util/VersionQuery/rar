@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+export IGNORE_QSCRIPTS=true
 
 # shellcheck source=../get-latest-version
 source "${BASH_SOURCE[0]%/*}"/../get-latest-version
 
-ScriptlessQuery "${BASH_SOURCE[0]##*/}" | sed 's#\.##'
+qURL https://aur.archlinux.org/rar.git | sed 's#\.##'

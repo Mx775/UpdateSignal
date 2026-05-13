@@ -1,8 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-
-# shellcheck source=../pkg.lists.sh
-source "${BASH_SOURCE[0]%/*}/../pkg.lists.sh"
+[ "${IGNORE_QSCRIPTS:-null}" = true ] || IGNORE_QSCRIPTS=false
 
 query_aur () {
     local url="${1}"
@@ -11,7 +9,7 @@ query_aur () {
     tmpdir="$(mktemp -d)"
 
     git clone --quiet --depth=1 "$url" "$tmpdir"
-    
+
     # shellcheck disable=1091
     source "${tmpdir}/PKGBUILD" || :
     echo "${pkgver}"
@@ -19,17 +17,17 @@ query_aur () {
 
 query_github_release () {
     local url="${1/github.com/api.github.com/repos}/releases/latest"
-    curl -s "$url" | jq -r .tag_name
+    curl -s "$url" | jq -r .tag_name | sed 's%^[rv]%%'
 }
 
 query_github_tag () {
     local url="${1/github.com/api.github.com/repos}/tags"
-    curl -s "$url" | jq -r '.[0].name'
+    curl -s "$url" | jq -r '.[0].name' | sed 's%^[rv]%%'
 }
 
 # Actions
 
-QURL () {
+qURL () {
     local url="$1"
 
     case "$url" in
@@ -38,39 +36,23 @@ QURL () {
     esac
 }
 
-QReleaseMonitor_Org () {
+qAnitya () {
     local project="$1"
     curl -s "https://release-monitoring.org/api/v2/projects/?name=${project}" | jq -r '.items[0].stable_versions[0]'
 }
 
-ScriptlessQuery () {
-    local pkg upstream_url rel_mon_project
-
-    for pkg in "$@"; do
-        pkg="${pkg##*/}"
-        
-        upstream_url="${PkgUpstreamURLs[$pkg]:-null}"
-        rel_mon_project="${PkgProjectNameOverrides[$pkg]:-$pkg}"
-
-        if [ "${upstream_url}" != "null" ]; then
-            QURL "$upstream_url"
-
-        else
-            QReleaseMonitor_Org "$rel_mon_project"
-
-        fi
-    done
-}
-
 # ### Main Function
 VersionQuery () {
-    local pkg
+    local pkg entry
 
-    for pkg in "$@"; do
-        pkg="${pkg##*/}"
-        [ -x "${0%/*}/VersionQuery/$pkg" ] && exec "${0%/*}/VersionQuery/$pkg"
-        
-        ScriptlessQuery "$pkg"
+    for entry in "$@"; do
+        pkg="${entry##*/}"
+        ! $IGNORE_QSCRIPTS && [ -x "${0%/*}/VersionQuery/$pkg" ] && exec "${0%/*}/VersionQuery/$pkg"
+
+        case "$entry" in
+            http://?*|https://?*) qURL "$entry" ;;
+            ?*) qAnitya "$entry" ;;
+        esac
     done
 }
 

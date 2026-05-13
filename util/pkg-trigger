@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# ### Env
+set -euo pipefail
+ThisScript="$(realpath -- "$0")"
+RepoPath="${ThisScript%/*/*}"
+
+cd "$RepoPath"
+ThisRepo="${THIS_REPO}"
+
+WorkDir="$(mktemp -d)"
+
+CleanUp () {
+    rm -rf "${WorkDir?}"
+}
+
+trap CleanUp EXIT
+
+# Mitigate potential security issue (scripts sourced by `get-latest-version`)
+obsToken="$OBS_TOKEN"
+obsCredentials="$OBS_CREDENTIALS"
+
+mapfile -tu3 ProjectList 3<<< "$OBS_PROJECT_LIST"
+exec 3<&-
+
+unset OBS_TOKEN OBS_CREDENTIALS THIS_REPO OBS_PROJECT_LIST
+
+# ### Methods
+# ========= Print Functions ===========
+PrintOK () {
+    echo "[+] $*" >&2
+}
+
+PrintInfo () {
+    echo "[i] $*" >&2
+}
+
+PrintNote () {
+    echo "[*] $*" >&2
+}
+
+PrintWarning () {
+    echo "[-] $*" >&2
+}
+
+PrintError () {
+    echo "[x] $*" >&2
+}
+# ==================================================
+
+ServiceRunRequestToken () {
+    local project="$1"
+    local package="$2"
+
+    PrintInfo "Sending a ServiceRun request to OBS for: $package"
+	curl -sH "Authorization: Token $obsToken" \
+			-H "Accept: application/xml; charset=utf-8" \
+			-X POST "https://api.opensuse.org/trigger" \
+			-d "project=$project&package=$package"
+
+	printf '\n'
+}
+
+ServiceRunRequest () {
+    local project_name="$1"
+    local package_name="$2"
+    local new_version="$3"
+    local comment="RunService: version pump to ${new_version}"
+
+    PrintInfo "Sending a ServiceRun request to OBS for: $package ($new_version)"
+    curl -sH "Accept: application/xml; charset=utf-8" \
+            --user "${obsCredentials}" \
+            -X POST "https://api.opensuse.org/source/${project_name}/${package_name}" \
+            -F "cmd=runservice" \
+            -F "comment=$comment"
+
+    printf '\n'
+}
+
+ListProjectPackages () {
+    local project_name="$1"
+
+    # Just incase the project list ends with an empty line
+    [ -z "$*" ] && return 0
+    curl -su "${obsCredentials}" "https://api.opensuse.org/source/$project_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
+}
+
+ListPackageFiles () {
+    local project_name="$1"
+    local package_name="$2"
+
+    # Just incase the project list ends with an empty line
+    [ -z "$*" ] && return 0
+    curl -su "${obsCredentials}" "https://api.opensuse.org/source/$project_name/$package_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
+}
+
+GetPkgInfo () {
+    local key="$1"
+    local pki_file="$2"
+
+    perl -nle "print \$2 if /^($key):\s*([^\s]*)$/" "${pki_file}"
+}
+
+SetPkgInfo () {
+    local key="$1"
+    local value="$2"
+    local pki_file="$3"
+
+    sed -Ei "/^${key}:/s|[^[:space:]]*$|${value}|" "${pki_file}"
+}
+
+HandlePackage () {
+    local project_name="$1"
+    local package_name="$2"
+    local file_name="_pkg_info"
+
+    local old_version new_version upstream
+    local comment pkg_info_file
+
+    if ! ListPackageFiles "$project_name" "$package_name" | grep -Fxq -- "${file_name}"; then
+        PrintInfo "Skipping un-managed package: $package_name"
+        return 0
+    fi
+
+    pkg_info_file="$(mktemp -p "$WorkDir")"
+    curl --silent --output "${pkg_info_file}" \
+        --user "${obsCredentials}" \
+        -H "Accept: application/xml; charset=utf-8" \
+        -X GET "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}"
+
+
+    upstream="$(GetPkgInfo Upstream "${pkg_info_file}")"
+    old_version="$(GetPkgInfo Version "${pkg_info_file}")"
+    new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
+
+    if [ "${new_version:?}" = "${old_version:?}" ]; then
+        PrintOK "Latest: $package_name ($new_version)"
+        return 0
+    fi
+
+    # Set `Version:` in _pkg_info to new version
+    PrintNote "Update: $package_name ($old_version => $new_version)"
+    SetPkgInfo Version "${new_version}" "${pkg_info_file}"
+
+    comment="${ThisRepo##*/}: version pump to ${new_version}"
+
+    PrintInfo "Uploading ${file_name}..."
+    curl -su "${obsCredentials}" \
+        -H "Accept: application/xml; charset=utf-8" \
+        -X PUT -d @"${pkg_info_file}" \
+        "https://api.opensuse.org/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
+}
+
+# ========== Main Section ============
+for project in "${ProjectList[@]}"; do
+
+    while read -ru3 package;do
+        HandlePackage "$project" "$package"
+    done 3< <(ListProjectPackages "$project")
+    exec 3<&-
+
+done
