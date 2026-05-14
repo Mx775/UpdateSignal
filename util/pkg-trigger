@@ -53,10 +53,9 @@ PrintError () {
 # Calls `curl` with OBS Credentials
 curl_cr () {
     local -x local_obs_credentials="$obsCredentials"
-    local -x test_var="ABC"
 
     curl -s \
-        -K <(printenv local_obs_credentials | sed 's/^.*$/user = "&"/') \
+        -K <(printenv local_obs_credentials | sed 's/"/\\"/;s/^.*$/user = "&"/') \
         -H "Accept: application/xml; charset=utf-8" \
         "$@"
 }
@@ -167,7 +166,7 @@ HandlePackage () {
 
     PrintInfo "Uploading ${file_name}..."
     curl_cr \
-        -T "${pkg_info_file}" \ # Implies PUT
+        -T "${pkg_info_file}" \
         "https://$obsAPI/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
 }
 
@@ -181,7 +180,7 @@ ValidateCredentials () {
     if [ -z "$token_count" ]; then
         PrintError "Invalid Response"
         echo "$response" >&2
-        exit 2
+        exit 202
     fi
 
 
