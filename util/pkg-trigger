@@ -153,6 +153,11 @@ HandlePackage () {
     old_version="$(GetPkgInfo Version "${pkg_info_file}")"
     new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
 
+    if [ "${new_version:?}" = null ]; then
+        PrintError "Unknown Version: $package_name"
+        return 1
+    fi
+
     if [ "${new_version:?}" = "${old_version:?}" ]; then
         PrintOK "UptoDate: $package_name ($new_version)"
         return 0
@@ -201,7 +206,7 @@ ValidateCredentials
 for project in "${ProjectList[@]}"; do
 
     while read -ru3 package;do
-        HandlePackage "$project" "$package"
+        HandlePackage "$project" "$package" || :
     done 3< <(ListProjectPackages "$project")
     exec 3<&-
 
