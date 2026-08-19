@@ -54,7 +54,11 @@ VersionQuery () {
 
     for entry in "$@"; do
         pkg="${entry##*/}"
-        ! $IGNORE_QSCRIPTS && [ -x "${0%/*}/VersionQuery/$pkg" ] && "${0%/*}/VersionQuery/$pkg" && return
+
+        if ! $IGNORE_QSCRIPTS && [ -x "${0%/*}/VersionQuery/$pkg" ]; then
+             "${0%/*}/VersionQuery/$pkg"
+             return
+        fi
 
         case "$entry" in
             http://?*|https://?*) qURL "$entry" ;;
