@@ -27,6 +27,13 @@ query_github_tag () {
 
 # Actions
 
+qGitTag () {
+    local git_repo_url
+    git_repo_url="$(perl -nle 'print $1 if /^git-tag\((.*)\)$/' <<< "$1")"
+
+    git ls-remote --tags "$git_repo_url" | perl -nle 'print $1 if /^[0-9a-f]*\s*refs\x2ftags\x2f(.*)$/' | tail -n1
+}
+
 qURL () {
     local url="$1"
 
@@ -51,6 +58,7 @@ VersionQuery () {
 
         case "$entry" in
             http://?*|https://?*) qURL "$entry" ;;
+            git-tag\(*\)) qGitTag "$entry" ;;
             ?*) qAnitya "$entry" ;;
         esac
     done
