@@ -115,14 +115,14 @@ ListPackageFiles () {
     curl_cr "https://$obsAPI/source/$project_name/$package_name" | xmlstarlet select -t -v "/directory/entry/@name" -n
 }
 
-GetPkgInfo () {
+get_pkg_info () {
     local key="$1"
     local pki_file="$2"
 
     perl -nle "print \$2 if /^($key):\s*([^\s]*)$/" "${pki_file}"
 }
 
-SetPkgInfo () {
+set_pkg_info () {
     local key="$1"
     local value="$2"
     local pki_file="$3"
@@ -130,7 +130,7 @@ SetPkgInfo () {
     sed -Ei "/^${key}:/s|[^[:space:]]*$|${value}|" "${pki_file}"
 }
 
-HandlePackage:_pkg_info () {
+HandlePackage__pkg_info () {
     local project_name="$1"
     local package_name="$2"
     local file_name="_pkg_info"
@@ -144,8 +144,8 @@ HandlePackage:_pkg_info () {
         "https://$obsAPI/source/${project_name}/${package_name}/${file_name}"
 
 
-    upstream="$(GetPkgInfo Upstream "${pkg_info_file}")"
-    old_version="$(GetPkgInfo Version "${pkg_info_file}")"
+    upstream="$(get_pkg_info Upstream "${pkg_info_file}")"
+    old_version="$(get_pkg_info Version "${pkg_info_file}")"
     new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
 
     if [ "${new_version:?}" = null ]; then
@@ -160,7 +160,7 @@ HandlePackage:_pkg_info () {
 
     # Set `Version:` in _pkg_info to new version
     PrintNote "Update: $package_name ($old_version => $new_version)"
-    SetPkgInfo Version "${new_version}" "${pkg_info_file}"
+    set_pkg_info Version "${new_version}" "${pkg_info_file}"
 
     comment="${ThisRepo##*/}: version pump to ${new_version}"
 
@@ -170,7 +170,14 @@ HandlePackage:_pkg_info () {
         "https://$obsAPI/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
 }
 
-WriteServiceFile () {
+get_pkginfo_servicefile () {
+    local key="$1"
+    local svfile="$2"
+
+    perl -nle "print \$2 if /^\s*<!--\s*($key): \s*([^\s]*)\s*-->\s*$/" "${svfile}"
+}
+
+write_service_file () {
     # Reads: project_name, package_name, new_version
     local -x Project="${project_name:?}"
     local -x Name="${package_name:?}"
@@ -183,7 +190,7 @@ WriteServiceFile () {
     envsubst < "${1}" > "${2}"
 }
 
-HandlePackage:_service () {
+HandlePackage__service () {
     local project_name="$1"
     local package_name="$2"
     local service_file
@@ -203,9 +210,11 @@ HandlePackage:_service () {
             "https://$obsAPI/source/${project_name}/${package_name}/${i}"
     done
 
-    upstream="$(perl -nle 'print $2 if /^<!--\s*(Upstream): \s*([^\s]*)\s*-->$/' "$service_file_in")"
-    old_version="$(xmlstarlet select -t -v "/services/service[@name='set_version']/param[@name='version']" "$service_file")"
+    upstream="$(get_pkginfo_servicefile Upstream "$service_file")"
+    old_version="$(get_pkginfo_servicefile Version "$service_file")"
     new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
+
+    # xmlstarlet select -t -v "/services/service[@name='set_version']/param[@name='version']" "$service_file"
 
     if [ "${new_version:?}" = null ]; then
         PrintError "Unknown Version: $package_name"
@@ -219,7 +228,7 @@ HandlePackage:_service () {
 
     # Write the new _service file
     PrintNote "Update: $package_name ($old_version => $new_version)"
-    WriteServiceFile "${service_file_in}" "${service_file}"
+    write_service_file "${service_file_in}" "${service_file}"
 
     comment="${ThisRepo##*/}: version pump to ${new_version}"
 
@@ -242,8 +251,8 @@ HandlePackage () {
     done
 
     case "${file_name:-null}" in
-        _service.in) HandlePackage:_service "$@" ;;
-        _pkg_info) HandlePackage:_pkg_info "$@" ;;
+        _service.in) HandlePackage__service "$@" ;;
+        _pkg_info) HandlePackage__pkg_info "$@" ;;
         *)
             PrintInfo "Skipping un-managed package: $package_name"
             return 0
