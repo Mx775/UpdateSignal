@@ -3,5 +3,4 @@ set -euo pipefail
 
 # shellcheck source=../get-latest-version
 source "${BASH_SOURCE[0]%/*}"/../get-latest-version
-
-qURL https://aur.archlinux.org/rar.git | sed 's#\.##'
+query_github_release https://github.com/telegramdesktop/tdesktop

@@ -10,9 +10,11 @@ query_aur () {
 
     git clone --quiet --depth=1 "$url" "$tmpdir"
 
-    # shellcheck disable=1091
-    source "${tmpdir}/PKGBUILD" || :
-    echo "${pkgver}"
+    (
+        # shellcheck disable=1091
+        source "${tmpdir}/PKGBUILD" || :
+        echo "${pkgver}"
+    )
 }
 
 query_github_release () {
