@@ -130,18 +130,13 @@ SetPkgInfo () {
     sed -Ei "/^${key}:/s|[^[:space:]]*$|${value}|" "${pki_file}"
 }
 
-HandlePackage () {
+HandlePackage:_pkg_info () {
     local project_name="$1"
     local package_name="$2"
     local file_name="_pkg_info"
 
     local old_version new_version upstream
     local comment pkg_info_file
-
-    if ! ListPackageFiles "$project_name" "$package_name" | grep -Fxq -- "${file_name}"; then
-        PrintInfo "Skipping un-managed package: $package_name"
-        return 0
-    fi
 
     pkg_info_file="$(mktemp -p "$WorkDir")"
     curl_cr \
@@ -173,6 +168,87 @@ HandlePackage () {
     curl_cr \
         -T "${pkg_info_file}" \
         "https://$obsAPI/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
+}
+
+WriteServiceFile () {
+    # Reads: project_name, package_name, new_version
+    local -x Project="${project_name:?}"
+    local -x Name="${package_name:?}"
+    local -x Version="${new_version:?}"
+    local -x SaneVersion="${new_version//[^a-zA-Z0-9._+]/_}"
+    local -x NumVersion="${new_version//[^0-9.]/}"
+
+    NumVersion="$(sed -r 's/\.+/./g;s/(^\.|\.$)//g' <<< "${NumVersion}")"
+
+    envsubst < "${1}" > "${2}"
+}
+
+HandlePackage:_service () {
+    local project_name="$1"
+    local package_name="$2"
+    local service_file
+    local service_file_in
+
+    local old_version new_version upstream
+    local work_dir
+
+    work_dir="$(mktemp -d)"
+    service_file="${work_dir}/_service"
+    service_file_in="${work_dir}/_service.in"
+
+    local i
+    for i in _service _service.in ;do
+        curl_cr \
+            --output "${work_dir}/${i}" \
+            "https://$obsAPI/source/${project_name}/${package_name}/${i}"
+    done
+
+    upstream="$(perl -nle 'print $2 if /^<!--\s*(Upstream): \s*([^\s]*)\s*-->$/' "$service_file_in")"
+    old_version="$(xmlstarlet select -t -v "/services/service[@name='set_version']/param[@name='version']" "$service_file")"
+    new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
+
+    if [ "${new_version:?}" = null ]; then
+        PrintError "Unknown Version: $package_name"
+        return 1
+    fi
+
+    if [ "${new_version:?}" = "${old_version:?}" ]; then
+        PrintOK "UptoDate: $package_name ($new_version)"
+        return 0
+    fi
+
+    # Write the new _service file
+    PrintNote "Update: $package_name ($old_version => $new_version)"
+    WriteServiceFile "${service_file_in}" "${service_file}"
+
+    comment="${ThisRepo##*/}: version pump to ${new_version}"
+
+    PrintInfo "Uploading ${service_file##*/}..."
+    curl_cr \
+        -T "${service_file}" \
+        "https://$obsAPI/source/${project_name}/${package_name}/${service_file##*/}?comment=$(jq -s -R -r @uri <<< "$comment")"
+}
+
+HandlePackage () {
+    local project_name="$1"
+    local package_name="$2"
+    local pkg_files file_name
+
+    pkg_files="$(ListPackageFiles "$project_name" "$package_name")"
+
+    local f
+    for f in _service.in _pkg_info; do
+        grep -Fxq -- "${f}" <<< "$pkg_files" && file_name="$f"
+    done
+
+    case "${file_name:-null}" in
+        _service.in) HandlePackage:_service "$@" ;;
+        _pkg_info) HandlePackage:_pkg_info "$@" ;;
+        *)
+            PrintInfo "Skipping un-managed package: $package_name"
+            return 0
+        ;;
+    esac
 }
 
 ValidateCredentials () {
