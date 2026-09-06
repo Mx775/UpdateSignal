@@ -170,13 +170,6 @@ HandlePackage__pkg_info () {
         "https://$obsAPI/source/${project_name}/${package_name}/${file_name}?comment=$(jq -s -R -r @uri <<< "$comment")"
 }
 
-get_pkginfo_servicefile () {
-    local key="$1"
-    local svfile="$2"
-
-    perl -nle "print \$2 if /^\s*<!--\s*($key): \s*([^\s]*)\s*-->\s*$/" "${svfile}"
-}
-
 write_service_file () {
     # Reads: project_name, package_name, new_version
     local -x Project="${project_name:?}"
@@ -210,8 +203,8 @@ HandlePackage__service () {
             "https://$obsAPI/source/${project_name}/${package_name}/${i}"
     done
 
-    upstream="$(get_pkginfo_servicefile Upstream "$service_file")"
-    old_version="$(get_pkginfo_servicefile Version "$service_file")"
+    upstream="$(get_pkg_info Upstream "$service_file")"
+    old_version="$(get_pkg_info Version "$service_file")"
     new_version="$("${0%/*}/get-latest-version" "${upstream:-${package_name}}")"
 
     # xmlstarlet select -t -v "/services/service[@name='set_version']/param[@name='version']" "$service_file"
